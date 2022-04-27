@@ -27,35 +27,89 @@ def get_type_conv(dtype: np.dtype) -> Tuple[str, Callable[[np.ndarray], Sexp], T
     else:
         raise ValueError(f"Unknown dtype {dtype!r} cannot be converted to ?gRMatrix.")
 
+#
+# def py2r_context(f):
+#     @wraps(f)
+#     def wrapper(obj):
+#         global methods, as_logical, as_integer, as_double
+#         if methods is None:
+#             importr("Matrix")  # make class available
+#             methods = importr("methods")
+#             as_logical = baseenv["as.logical"]
+#             as_integer = baseenv["as.integer"]
+#             as_double = baseenv["as.double"]
+#
+#         with localconverter(default_converter + numpy2ri.converter):
+#             return f(obj)
+#
+#     return wrapper
+
+def _py2r(x):
+    import rpy2.robjects as ro
+    with localconverter(
+        default_converter
+        + numpy2ri.converter
+    ):
+        x = ro.conversion.py2rpy(x)
+    return x
+
 
 def py2r_context(f):
     @wraps(f)
     def wrapper(obj):
         global methods, as_logical, as_integer, as_double
         if methods is None:
+            print('Running the if methods block')
             importr("Matrix")  # make class available
             methods = importr("methods")
-            as_logical = baseenv["as.logical"]
-            as_integer = baseenv["as.integer"]
-            as_double = baseenv["as.double"]
+            as_logical = lambda x:baseenv["as.logical"](_py2r(x))
+            as_integer = lambda x:baseenv["as.integer"](_py2r(x))
+            as_double = lambda x:baseenv["as.double"](_py2r(x))
 
-        with localconverter(default_converter + numpy2ri.converter):
-            return f(obj)
+        return f(obj)
 
     return wrapper
 
 
+
+from rpy2.rinterface import FloatSexpVector, IntSexpVector
+from rpy2.robjects.vectors import IntVector, FloatVector
 @converter.py2rpy.register(sparse.csc_matrix)
 @py2r_context
 def csc_to_rmat(csc: sparse.csc_matrix):
     csc.sort_indices()
     t, conv_data, _ = get_type_conv(csc.dtype)
+
+    # print('hallo')
+    # if False:
+    #     # as_integer = baseenv["as.integer"]
+    #     as_integer = IntVector
+    #     conv_data = FloatVector
+    #     print('as_integer', as_integer)
+    # else:
+    #     as_logical = lambda x:baseenv["as.logical"](_py2r(x))
+    #     as_integer = lambda x:baseenv["as.integer"](_py2r(x))
+    #     as_double = lambda x:baseenv["as.double"](_py2r(x))
+
+    i = as_integer(csc.indices.tolist())
+    p=as_integer(csc.indptr.tolist())
+    # x=conv_data(csc.data.tolist())
+    x=as_double(csc.data.tolist())
+    Dim=as_integer(list(csc.shape))
+
+
+    print('t', type(t), t )
+    print('i',type(i), i )
+    print('p',type(p), p )
+    print('x',type(x), x )
+    print('Dim',type(Dim), Dim )
+
     return methods.new(
         f"{t}gCMatrix",
-        i=as_integer(csc.indices),
-        p=as_integer(csc.indptr),
-        x=conv_data(csc.data),
-        Dim=as_integer(list(csc.shape)),
+        i=i,
+        p=p,
+        x=x,
+        Dim=Dim,
     )
 
 
